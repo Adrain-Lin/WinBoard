@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -265,7 +265,7 @@ namespace WinBoard {
             AddDockStyleMenu(menu);
             var positionLock=new MenuItem{Header="锁定紧凑栏位置",IsCheckable=true,IsChecked=prefs.DockPositionLocked};menu.Items.Add(positionLock);
             positionLock.Click+=(s,e)=>{prefs.DockPositionLocked=positionLock.IsChecked;var dock=dashboardHost!=null?this:dockHost;if(dock!=null)dock.RememberDockPosition();Save();RefreshDockPreferences();};
-            var dockHide=new MenuItem{Header="使用最大化窗口时自动隐藏紧凑栏",IsCheckable=true,IsChecked=prefs.AutoHideDock};menu.Items.Add(dockHide);
+            var dockHide=new MenuItem{Header="窗口最大化或全屏时自动隐藏紧凑栏",IsCheckable=true,IsChecked=prefs.AutoHideDock};menu.Items.Add(dockHide);
             dockHide.Click+=(s,e)=>{prefs.AutoHideDock=dockHide.IsChecked;RefreshDockPreferences();Save();};
             var full=new MenuItem{Header="运行时完全隐藏 Windows 任务栏",IsCheckable=true};menu.Items.Add(full);
             full.Click+=(s,e)=>{SetFullTaskbarHide(full.IsChecked);full.IsChecked=(dashboardHost??this).taskbarGuard.Active;};
