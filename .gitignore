@@ -1,0 +1,11 @@
+/data/
+/backups/
+/tools/
+/dist/
+/*.exe
+/*.pdb
+/WinBoard.cs
+*.user
+*.suo
+Thumbs.db
+Desktop.ini
