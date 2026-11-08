@@ -9,3 +9,7 @@ The UI integration was also checked locally for capture/power button visibility,
 ## Dock visibility regression
 
 Run `powershell -ExecutionPolicy Bypass -File tests/Test-DockVisibility.ps1` after building. This creates temporary native test windows without injecting keyboard/mouse input and checks normal/maximized/borderless-fullscreen/restored windows, full-screen popups with normal owners, desktop/minimized/self exclusions, physical geometry, and cross-monitor foreground behavior when a second monitor is available. It briefly displays test windows; run on an interactive desktop.
+
+## Capture concurrency regression
+
+Run `powershell -ExecutionPolicy Bypass -File tests/Test-CaptureConcurrency.ps1` after building. It records a dedicated moving test-pattern window while taking window and region screenshots, verifies the main UI/control center stay enabled, exercises an expired screenshot deadline, pause/resume and cancellation, and exits with a selector open to verify video finalization. The UI heartbeat is measured. PNG writes run on a worker. Audio, microphone and clipboard writes are disabled; no global mouse/keyboard input is injected. Requires an interactive desktop and the recording prerequisites. Temporary artifacts are retained at the printed path.

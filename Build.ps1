@@ -29,6 +29,7 @@ $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.AppIcons.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Power.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Capture.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.CaptureRecording.cs')
+$compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.ScreenshotOperation.cs')
 $recorder=Join-Path $PSScriptRoot 'lib/ScreenRecorderLib/ScreenRecorderLib.dll'
 $compilerArgs += ('/reference:' + $recorder)
 $runtime=Join-Path $PSScriptRoot 'ScreenRecorderLib.dll'

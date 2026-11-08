@@ -148,7 +148,6 @@ namespace WinBoard {
             if(controlPanelSurface!=null){controlPanelSurface.Background=AppearanceBrush(style);DecorateGlass(controlPanelSurface,style);if(style.FontColor!=null)ApplyControlFont(controlPanelSurface,WidgetFontBrush(style));else ApplyControlFont(controlPanelSurface,Brushes.White);ConfigureGlass(controlPanel,()=>AppearanceFor("control"));}
         }
         void ToggleControlPanel() {
-            if(recording!=null&&captureBar!=null){captureBar.Show();captureBar.Activate();return;}
             if(controlPanel!=null && controlPanel.IsVisible){controlPanel.Hide();return;}
             if(controlPanel==null) {
                 controlPanel=new Window{Title="WinBoard · 控制面板",Width=360,Height=Math.Min(480,SystemParameters.WorkArea.Height-16),WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=AppearanceFor("control").Opacity<=0,Background=Brushes.Transparent,ShowInTaskbar=false,Topmost=prefs.Widgets.Topmost,FontFamily=new FontFamily("Microsoft YaHei UI")};
@@ -168,7 +167,7 @@ namespace WinBoard {
             var ball=widgetWindows["control"];var area=SystemParameters.WorkArea;
             double x=ball.Left-controlPanel.Width-12;if(x<area.Left)x=ball.Left+ball.Width+12;
             controlPanel.Left=Math.Max(area.Left,Math.Min(x,area.Right-controlPanel.Width));controlPanel.Top=Math.Max(area.Top,Math.Min(ball.Top-60,area.Bottom-controlPanel.Height));
-            SyncControlValues();controlPanel.Show();controlPanel.Activate();
+            SyncControlValues();SyncCapturePanel();controlPanel.Show();ExcludeCaptureControl(controlPanel);controlPanel.Activate();
             controlPanelSurface.BeginAnimation(UIElement.OpacityProperty,new DoubleAnimation(.35,1,TimeSpan.FromMilliseconds(160)));
         }
     }
