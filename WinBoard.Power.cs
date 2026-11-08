@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -48,7 +48,7 @@ namespace WinBoard {
    if(controlPanel!=null)controlPanel.Hide();
    string prompt=action==ControlPowerAction.Sleep?"是否让电脑进入待机（睡眠）状态？":"是否立即"+label+"电脑？\n请先保存正在编辑的内容。";
    if(MessageBox.Show(this,prompt,"确认"+label,MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
-   try{if(action==ControlPowerAction.Sleep){SleepCommands.DetectMode();if(noteEditor!=null)FlushNote();Save();var delay=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(650)};delay.Tick+=(s,e)=>{delay.Stop();try{SleepCommands.Request(new System.Windows.Interop.WindowInteropHelper(this).Handle);}catch(Exception ex){MessageBox.Show(this,"无法进入睡眠："+ex.Message,"WinBoard");}};delay.Start();}else ExitThenPower(action);}
+   try{if(action==ControlPowerAction.Sleep){if(recording!=null||captureBusy)throw new InvalidOperationException("请先结束录屏，再让电脑进入睡眠。");SleepCommands.DetectMode();if(noteEditor!=null)FlushNote();Save();var delay=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(650)};delay.Tick+=(s,e)=>{delay.Stop();try{SleepCommands.Request(new System.Windows.Interop.WindowInteropHelper(this).Handle);}catch(Exception ex){MessageBox.Show(this,"无法进入睡眠："+ex.Message,"WinBoard");}};delay.Start();}else ExitThenPower(action);}
    catch(Exception ex){MessageBox.Show(this,"无法执行"+label+"："+ex.Message,"WinBoard");}
   }
  }

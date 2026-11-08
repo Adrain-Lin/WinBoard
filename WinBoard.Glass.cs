@@ -109,7 +109,7 @@ namespace WinBoard {
             for(int i=0;i<names.Length;i++){string uri=uris[i];var button=ControlIcon(glyphs[i],names[i],()=>{if(uri=="ms-settings:network-wifi")OpenConnectionControls(false);else if(uri=="ms-settings:bluetooth")OpenConnectionControls(true);else Launch(uri);},i<2?"#5035DFA0":"#20FFFFFF");button.Height=58;((TextBlock)button.Content).FontSize=21;shortcuts.Children.Add(button);}panel.Children.Add(shortcuts);BuildConnectionSummary(panel);
             controlBrightness=ControlSlider(panel,"\uE706","屏幕亮度","ms-settings:display",false);
             controlVolume=ControlSlider(panel,"\uE767","系统音量","ms-settings:sound",true);
-            BuildPowerButtons(panel);
+            BuildCaptureButtons(panel);BuildPowerButtons(panel);
         }
         void ShowControlOrb(WidgetState state) {
             state.Normalize();var orb=new Window{Title="WinBoard · 控制中心",Width=state.Width,Height=state.Height,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=true,Background=Brushes.Transparent,ShowInTaskbar=false,Topmost=prefs.Widgets.Topmost,ShowActivated=false};
@@ -148,9 +148,10 @@ namespace WinBoard {
             if(controlPanelSurface!=null){controlPanelSurface.Background=AppearanceBrush(style);DecorateGlass(controlPanelSurface,style);if(style.FontColor!=null)ApplyControlFont(controlPanelSurface,WidgetFontBrush(style));else ApplyControlFont(controlPanelSurface,Brushes.White);ConfigureGlass(controlPanel,()=>AppearanceFor("control"));}
         }
         void ToggleControlPanel() {
+            if(recording!=null&&captureBar!=null){captureBar.Show();captureBar.Activate();return;}
             if(controlPanel!=null && controlPanel.IsVisible){controlPanel.Hide();return;}
             if(controlPanel==null) {
-                controlPanel=new Window{Title="WinBoard · 控制面板",Width=360,Height=420,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=AppearanceFor("control").Opacity<=0,Background=Brushes.Transparent,ShowInTaskbar=false,Topmost=prefs.Widgets.Topmost,FontFamily=new FontFamily("Microsoft YaHei UI")};
+                controlPanel=new Window{Title="WinBoard · 控制面板",Width=360,Height=Math.Min(480,SystemParameters.WorkArea.Height-16),WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=AppearanceFor("control").Opacity<=0,Background=Brushes.Transparent,ShowInTaskbar=false,Topmost=prefs.Widgets.Topmost,FontFamily=new FontFamily("Microsoft YaHei UI")};
                 controlPanelSurface=new Border{CornerRadius=new CornerRadius(22),Padding=new Thickness(14),BorderThickness=new Thickness(1)};controlPanel.Content=controlPanelSurface;
                 var layout=new DockPanel();controlPanelSurface.Child=layout;
                 var header=new DockPanel{Margin=new Thickness(5,0,0,4),Height=42};
@@ -158,7 +159,7 @@ namespace WinBoard {
                 var settings=ControlIcon("\uE713","控制中心外观",()=>{controlPanel.Hide();AppearanceSettings("control");},"#22FFFFFF");settings.Width=32;settings.Height=30;settings.Padding=new Thickness(0);((TextBlock)settings.Content).FontSize=16;DockPanel.SetDock(settings,Dock.Right);header.Children.Add(settings);
                 var status=new TextBlock{Text="\uE83F",FontFamily=new FontFamily("Segoe MDL2 Assets"),FontSize=25,Foreground=Brushes.White,VerticalAlignment=VerticalAlignment.Center};
                 controlStatus=WText("",11);controlPower=new TextBlock{FontSize=14,FontWeight=FontWeights.Medium,Foreground=Brushes.White,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(7,0,0,0)};header.Children.Add(status);controlChargeIcon=new TextBlock{Text="\u26A1",FontFamily=new FontFamily("Segoe UI Symbol"),FontSize=18,Foreground=Hex("#52EBA7"),VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(2,0,0,0)};header.Children.Add(controlChargeIcon);header.Children.Add(controlPower);UpdateWidgetClock();status.ToolTip=controlStatus.Text;DockPanel.SetDock(header,Dock.Bottom);layout.Children.Add(header);
-                var controls=new StackPanel();BuildControlIcons(controls);layout.Children.Add(controls);
+                var controls=new StackPanel();BuildControlIcons(controls);layout.Children.Add(new ScrollViewer{Content=controls,VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
                 controlPanel.Deactivated+=(s,e)=>{Window orb;if(widgetWindows.TryGetValue("control",out orb) && !orb.IsMouseOver)controlPanel.Hide();};
                 controlPanel.KeyDown+=(s,e)=>{if(e.Key==Key.Escape)controlPanel.Hide();};
                 controlPanel.Closing+=(s,e)=>{if(!stoppingWidgets){e.Cancel=true;controlPanel.Hide();}};

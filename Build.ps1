@@ -27,5 +27,12 @@ $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Recycle.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.RecycleAnimation.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.AppIcons.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Power.cs')
+$compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Capture.cs')
+$compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.CaptureRecording.cs')
+$recorder=Join-Path $PSScriptRoot 'lib/ScreenRecorderLib/ScreenRecorderLib.dll'
+$compilerArgs += ('/reference:' + $recorder)
+$runtime=Join-Path $PSScriptRoot 'ScreenRecorderLib.dll'
+if(!(Test-Path $runtime) -or (Get-FileHash $runtime).Hash -ne (Get-FileHash $recorder).Hash){Copy-Item -LiteralPath $recorder -Destination $runtime -Force}
+
 & (Join-Path $framework 'csc.exe') @compilerArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }

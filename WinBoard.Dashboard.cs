@@ -276,6 +276,7 @@ namespace WinBoard {
             Application.Current.Exit+=(s,e)=>taskbarGuard.Dispose();
             Application.Current.SessionEnding+=(s,e)=>{e.Cancel=false;ExitForWindowsSession();};
             Activated+=(s,e)=>{if(dockHost!=null)Dispatcher.BeginInvoke(new Action(EnsureDockWindow));};
+            SourceInitialized+=(s,e)=>InitializeCaptureHotkeys();
             SourceInitialized+=(s,e)=>HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook((IntPtr h,int m,IntPtr wp,IntPtr lp,ref bool handled)=>{if(m==0x11){systemSessionEnding=true;Dispatcher.BeginInvoke(new Action(ExitForWindowsSession));handled=true;return new IntPtr(1);}if(m==0x8001){Dispatcher.BeginInvoke(new Action(Quit));handled=true;}else if(!quitting && (m==0x10 || (m==0x112 && (wp.ToInt64() & 0xFFF0)==0xF020))){handled=true;Dispatcher.BeginInvoke(new Action(EnterCompact));}return IntPtr.Zero;});
             Closing+=(s,e)=>{if(!quitting){e.Cancel=true;Dispatcher.BeginInvoke(new Action(EnterCompact));} };
             StateChanged+=(s,e)=>{
@@ -618,9 +619,12 @@ namespace WinBoard {
             menu.Items.Add("打开工作台",null,(s,e)=>Dispatcher.Invoke(new Action(()=>{if(compact)SwitchMode();BringBack();})));
             menu.Items.Add("新建项目",null,(s,e)=>Dispatcher.Invoke(new Action(()=>{if(compact)SwitchMode();BringBack();EditProject(null);})));
             menu.Items.Add("桌面组件",null,(s,e)=>Dispatcher.Invoke(new Action(WidgetManager)));
+            menu.Items.Add("框选截图",null,(s,e)=>Dispatcher.Invoke(new Action(()=>TakeScreenshot(null))));
+            menu.Items.Add("录屏 / 录制控制",null,(s,e)=>Dispatcher.Invoke(new Action(()=>OpenCaptureSettings(true))));
+            menu.Items.Add("结束录屏",null,(s,e)=>Dispatcher.Invoke(new Action(()=>StopCaptureRecording(null))));
             menu.Items.Add("设置",null,(s,e)=>Dispatcher.Invoke(new Action(AppSettings)));
             menu.Items.Add("退出 WinBoard",null,(s,e)=>Dispatcher.Invoke(new Action(Quit)));tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>Dispatcher.Invoke(new Action(BringBack));
         }
-        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;quitting=true;CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
+        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;if(FinishRecordingBeforeExit())return;quitting=true;CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
     }
 }
