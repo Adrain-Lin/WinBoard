@@ -5,6 +5,8 @@ class ConcurrentBoard:Board {
 }
 class CaptureConcurrencySmoke {
  static ConcurrentBoard board;static Application app;static Window scene;static System.Windows.Controls.TextBlock pattern;static DispatcherTimer heartbeat;static int ticks;static long previous,maxGap;static Stopwatch clock=new Stopwatch();static bool passed;
+ static void SavePanel(BitmapSource image){var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using(var file=File.Create("results/restored-panel.png"))encoder.Save(file);}
+ [DllImport("user32.dll")]static extern bool GetWindowDisplayAffinity(IntPtr h,out uint affinity);
  [DllImport("user32.dll")]static extern bool IsWindowEnabled(IntPtr h);
  [DllImport("user32.dll")]static extern bool PostMessage(IntPtr h,int m,IntPtr w,IntPtr l);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr FindWindow(string cls,string title);
@@ -26,7 +28,16 @@ class CaptureConcurrencySmoke {
  IntPtr picker=FindWindow(null,"WinBoard · 框选截图");Check(picker!=IntPtr.Zero,"Selector handle missing");using(new CaptureDesktop.DpiScope()){var p=new Pt{X=50,Y=160};ClientToScreen(target.Handle,ref p);ScreenToClient(picker,ref p);PostMessage(picker,0x201,new IntPtr(1),Position(p.X,p.Y));PostMessage(picker,0x200,new IntPtr(1),Position(p.X+160,p.Y+100));PostMessage(picker,0x202,IntPtr.Zero,Position(p.X+160,p.Y+100));}
  Check(await Task.WhenAny(board.Shot.Task,Task.Delay(4000))==board.Shot.Task,"Region screenshot did not finish");await Until(()=>!(bool)Get("screenshotBusy"),1000);Check(board.Shots==2,"Screenshot count");
  Call("TakeScreenshot",new object[]{null});await RegionReady();((ScreenshotOperation)Get("screenshotOperation")).Cancel();await Until(()=>!(bool)Get("screenshotBusy"),2000);Check(Get("recording")!=null,"Canceling screenshot ended recording");await Task.Delay(150);
+ Call("StopCaptureRecording",new object[]{null});await Until(()=>Get("recording")==null,15000);
+ Check(Get("controlPanel")==null,"Capture-excluded control panel must be destroyed after stop");
+ Call("ToggleControlPanel");var restored=(Window)Get("controlPanel");await Task.Delay(300);
+ Check(restored!=panel&&restored.IsVisible,"Control center must reopen using a new window");
+ uint affinity;Check(GetWindowDisplayAffinity(new WindowInteropHelper(restored).Handle,out affinity)&&affinity==0,"New control panel retained capture exclusion");
+ var surface=(System.Windows.Controls.Border)restored.Content;Check(surface.Child!=null&&surface.ActualHeight>100&&surface.Opacity>0.9,"Restored control panel has no visible content");
+ var bitmap=new RenderTargetBitmap((int)restored.ActualWidth,(int)restored.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(surface);SavePanel(bitmap);
+ using(new CaptureDesktop.DpiScope()){var a=restored.PointToScreen(new Point(0,0));var b=restored.PointToScreen(new Point(restored.ActualWidth,restored.ActualHeight));using(var shot=CaptureDesktop.Capture(new System.Drawing.Rectangle((int)a.X,(int)a.Y,(int)(b.X-a.X),(int)(b.Y-a.Y))))shot.Save("results/restored-panel-desktop.png");}
+ restored.Hide();Call("StartCaptureRecording",target);await Until(()=>Get("recording")!=null,6000);await Task.Delay(500);
  Call("TakeScreenshot",new object[]{null});await RegionReady();Check(ticks>=15&&maxGap<1500,"WPF heartbeat stalled: "+maxGap+"ms");File.WriteAllText("results/concurrency.txt","PASS: window screenshot and region selection during native recording; selector leaves WPF/control center enabled; expired deadline cancels a real native screenshot without UI blocking; pause/resume; cancel; heartbeat max gap "+maxGap+"ms; no microphone/audio/clipboard capture.");passed=true;Call("Quit");
- }catch(Exception ex){Fail(ex);}};app.Run(board);Check(passed,"Test incomplete");Check(Directory.GetFiles("results/videos","*.mp4").Any(f=>!f.EndsWith(".recording.mp4")),"Exit did not finalize video");Check(!Directory.GetFiles("results/videos","*.recording.mp4").Any(),"Partial recording left after exit");File.AppendAllText("results/concurrency.txt","\nPASS: exit cancels active selector and finalizes MP4.");}catch(Exception ex){File.WriteAllText("error.txt",ex.ToString());Environment.ExitCode=1;}}
+ }catch(Exception ex){Fail(ex);}};app.Run(board);Check(passed,"Test incomplete");Check(Directory.GetFiles("results/videos","*.mp4").Any(f=>!f.EndsWith(".recording.mp4")),"Exit did not finalize video");Check(!Directory.GetFiles("results/videos","*.recording.mp4").Any(),"Partial recording left after exit");File.AppendAllText("results/concurrency.txt","\nPASS: stop discards excluded HWND; reopened control panel has WDA_NONE and rendered content; exit cancels active selector and finalizes MP4.");}catch(Exception ex){File.WriteAllText("error.txt",ex.ToString());Environment.ExitCode=1;}}
  static void Fail(Exception ex){File.WriteAllText("results/error.txt",ex.ToString());if(heartbeat!=null)heartbeat.Stop();Environment.ExitCode=1;try{Call("Quit");}catch{app.Shutdown(1);}}
 }

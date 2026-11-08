@@ -147,6 +147,16 @@ namespace WinBoard {
             if(orbSurface!=null){orbSurface.Background=AppearanceBrush(style);DecorateGlass(orbSurface,style);}
             if(controlPanelSurface!=null){controlPanelSurface.Background=AppearanceBrush(style);DecorateGlass(controlPanelSurface,style);if(style.FontColor!=null)ApplyControlFont(controlPanelSurface,WidgetFontBrush(style));else ApplyControlFont(controlPanelSurface,Brushes.White);ConfigureGlass(controlPanel,()=>AppearanceFor("control"));}
         }
+        // A capture-excluded acrylic HWND must not be reused after capture ends:
+        // DWM can retain its backdrop while losing the WPF content surface.
+        void ResetCaptureControlPanel() {
+            if(controlPanel==null)return;
+            var previous=controlPanel;bool stopping=stoppingWidgets;
+            stoppingWidgets=true;
+            try{previous.Hide();previous.Close();}finally{stoppingWidgets=stopping;}
+            glassWindows.Remove(previous);controlPanel=null;controlPanelSurface=null;
+            capturePanelRow=null;capturePanelTime=null;capturePanelPause=null;capturePanelStop=null;
+        }
         void ToggleControlPanel() {
             if(controlPanel!=null && controlPanel.IsVisible){controlPanel.Hide();return;}
             if(controlPanel==null) {
@@ -167,7 +177,7 @@ namespace WinBoard {
             var ball=widgetWindows["control"];var area=SystemParameters.WorkArea;
             double x=ball.Left-controlPanel.Width-12;if(x<area.Left)x=ball.Left+ball.Width+12;
             controlPanel.Left=Math.Max(area.Left,Math.Min(x,area.Right-controlPanel.Width));controlPanel.Top=Math.Max(area.Top,Math.Min(ball.Top-60,area.Bottom-controlPanel.Height));
-            SyncControlValues();SyncCapturePanel();controlPanel.Show();ExcludeCaptureControl(controlPanel);controlPanel.Activate();
+            SyncControlValues();SyncCapturePanel();ExcludeCaptureControl(controlPanel);controlPanel.Show();controlPanel.Activate();
             controlPanelSurface.BeginAnimation(UIElement.OpacityProperty,new DoubleAnimation(.35,1,TimeSpan.FromMilliseconds(160)));
         }
     }

@@ -2,14 +2,14 @@
 
 Windows 桌面项目工作台、应用 Dock 和独立桌面组件。使用 C#、WPF 和 Windows 系统接口实现。
 
-开发者：**AdrainLin** · 开发时间标注：2024年11月4日 · 当前版本：**1.3.4**
+开发者：**AdrainLin** · 开发时间标注：2024年11月4日 · 当前版本：**1.3.5**
 
 ## 下载与安装
 
 前往 [Releases](https://github.com/Adrain-Lin/WinBoard/releases/latest)：
 
-- `WinBoard-Setup-1.3.4.exe`：双击一键安装，为当前用户创建桌面和开始菜单快捷方式；可选择开机自启动。
-- `WinBoard-1.3.4-win-x64.zip`：解压到固定、可写目录，运行 `WinBoard.exe`。
+- `WinBoard-Setup-1.3.5.exe`：双击一键安装，为当前用户创建桌面和开始菜单快捷方式；可选择开机自启动。
+- `WinBoard-1.3.5-win-x64.zip`：解压到固定、可写目录，运行 `WinBoard.exe`。
 
 支持 Windows 10/11 **x64**，需要 .NET Framework 4.x（建议 4.8）。录屏另需 [Microsoft Visual C++ 2015–2022 x64 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe) 及 Windows Media Foundation；Windows N/KN 需安装 Media Feature Pack。运行库未捆绑在本安装包中。安装包未进行数字签名；本项目不支持 macOS、Linux 或 Windows ARM 原生运行。
 
@@ -38,7 +38,7 @@ powershell -ExecutionPolicy Bypass -File .\Build-Installer.ps1
 powershell -ExecutionPolicy Bypass -File .\Package.ps1 -Executable WinBoard.exe
 ```
 
-`Build.ps1` 使用系统 `.NET Framework64/v4.0.30319/csc.exe` 与 WPF 程序集。构建需要对应的 .NET Framework 组件。录屏依赖固定为 ScreenRecorderLib 7.0.1 x64，仓库 lib/ 已包含 DLL 和原始 MIT 协议，构建时复制至程序目录。`Build-Installer.ps1` 生成 `dist/WinBoard-Setup-1.3.4.exe`，`Package.ps1` 生成便携 ZIP。
+`Build.ps1` 使用系统 `.NET Framework64/v4.0.30319/csc.exe` 与 WPF 程序集。构建需要对应的 .NET Framework 组件。录屏依赖固定为 ScreenRecorderLib 7.0.1 x64，仓库 lib/ 已包含 DLL 和原始 MIT 协议，构建时复制至程序目录。`Build-Installer.ps1` 生成 `dist/WinBoard-Setup-1.3.5.exe`，`Package.ps1` 生成便携 ZIP。
 
 源码按 `WinBoard.*.cs` 拆分，构建文件清单见 `Build.ps1`；`installer/Setup.cs` 为安装/卸载程序，`assets/` 包含图标与生成说明。
 
@@ -79,3 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\Package.ps1 -Executable WinBoard.exe
 ### 1.3.4 带声音与缩放显示器收尾修复
 
 录屏会话使用 MTA，显式设置物理像素输出尺寸与偶数边界，避免缩放显示器的逻辑尺寸进入编码器。默认使用兼容软件编码；可在录屏设置中切换硬件加速。软件编码 CPU 占用较高，可降低帧率或画质。后台诊断日志保存在 data/recording-logs，不包含录制音频样本，也不随发布上传。
+
+### 1.3.5 录制后的控制中心恢复
+
+控制中心在显示前应用录制排除状态，录制结束或取消后销毁旧玻璃窗口，再次打开时重新创建，避免复用异常的绘制表面。录屏设置中的“录制画面中隐藏悬浮球和控制条”只控制视频里的显示；取消勾选可将悬浮球一起录入。

@@ -1,6 +1,6 @@
 ﻿param([string]$Executable='WinBoard.exe')
 $ErrorActionPreference='Stop'
-$version='1.3.4'
+$version='1.3.5'
 $stage=Join-Path ([IO.Path]::GetTempPath()) ('WinBoard-Package-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot $Executable) -Destination (Join-Path $stage 'WinBoard.exe')
