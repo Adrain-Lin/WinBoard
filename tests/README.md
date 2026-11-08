@@ -13,3 +13,7 @@ Run `powershell -ExecutionPolicy Bypass -File tests/Test-DockVisibility.ps1` aft
 ## Capture concurrency regression
 
 Run `powershell -ExecutionPolicy Bypass -File tests/Test-CaptureConcurrency.ps1` after building. It records a dedicated moving test-pattern window while taking window and region screenshots, verifies the main UI/control center stay enabled, exercises an expired screenshot deadline, pause/resume and cancellation, and exits with a selector open to verify video finalization. The UI heartbeat is measured. PNG writes run on a worker. Audio, microphone and clipboard writes are disabled; no global mouse/keyboard input is injected. Requires an interactive desktop and the recording prerequisites. Temporary artifacts are retained at the printed path.
+
+## Recording stop regression
+
+Run `tests/Test-CaptureStop.ps1` after building. It performs three consecutive sessions, double stop/dispose calls, validates exclusive access to finalized MP4 before completion notification and measures UI heartbeat. Audio and microphone are disabled.

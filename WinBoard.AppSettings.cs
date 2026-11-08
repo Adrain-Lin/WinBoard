@@ -11,8 +11,8 @@ using Microsoft.Win32;
 [assembly: AssemblyProduct("WinBoard")]
 [assembly: AssemblyCompany("AdrainLin")]
 [assembly: AssemblyCopyright("AdrainLin")]
-[assembly: AssemblyVersion("1.3.2.0")]
-[assembly: AssemblyFileVersion("1.3.2.0")]
+[assembly: AssemblyVersion("1.3.3.0")]
+[assembly: AssemblyFileVersion("1.3.3.0")]
 
 namespace WinBoard {
     public static class AppBrand {
