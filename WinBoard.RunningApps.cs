@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -117,11 +117,15 @@ namespace WinBoard {
             },IntPtr.Zero);
             return groups.Values.OrderBy(a=>a.Key,StringComparer.OrdinalIgnoreCase).ToList();
         }
-        public static void Activate(IntPtr window,bool minimize) {
-            if(!IsWindow(window))return;
-            if(minimize && !IsIconic(window)){ShowWindowAsync(window,6);return;}
+        public static bool CanActivate(IntPtr window) {
+            if(!IsWindow(window)||!IsWindowVisible(window))return false;
+            int cloaked;return DwmGetWindowAttribute(window,14,out cloaked,4)!=0||cloaked==0;
+        }
+        public static bool Activate(IntPtr window,bool minimize) {
+            if(!CanActivate(window))return false;
+            if(minimize && !IsIconic(window)){ShowWindowAsync(window,6);return true;}
             if(IsIconic(window))ShowWindowAsync(window,9);
-            SetForegroundWindow(window);
+            SetForegroundWindow(window);return true;
         }
         public static BitmapSource Icon(IntPtr window) {
             IntPtr icon;SendMessageTimeout(window,0x7F,new IntPtr(1),IntPtr.Zero,2,40,out icon);

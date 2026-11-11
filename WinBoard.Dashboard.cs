@@ -625,6 +625,6 @@ namespace WinBoard {
             menu.Items.Add("设置",null,(s,e)=>Dispatcher.Invoke(new Action(AppSettings)));
             menu.Items.Add("退出 WinBoard",null,(s,e)=>Dispatcher.Invoke(new Action(Quit)));tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>Dispatcher.Invoke(new Action(BringBack));
         }
-        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;if(FinishRecordingBeforeExit())return;quitting=true;CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
+        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;if(FinishRecordingBeforeExit())return;quitting=true;EndNativeTray();CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
     }
 }

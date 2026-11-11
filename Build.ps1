@@ -1,7 +1,7 @@
 ﻿param([string]$OutputName = 'WinBoard.exe')
 $ErrorActionPreference = 'Stop'
 $framework = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319'
-$refs = @('WPF\PresentationFramework.dll','WPF\PresentationCore.dll','WPF\WindowsBase.dll','System.Xaml.dll','System.Windows.Forms.dll','System.Drawing.dll','System.Runtime.Serialization.dll','System.Net.Http.dll','System.Management.dll')
+$refs = @('WPF\UIAutomationClient.dll','WPF\UIAutomationTypes.dll','WPF\PresentationFramework.dll','WPF\PresentationCore.dll','WPF\WindowsBase.dll','System.Xaml.dll','System.Windows.Forms.dll','System.Drawing.dll','System.Runtime.Serialization.dll','System.Net.Http.dll','System.Management.dll')
 $compilerArgs = @('/nologo','/target:winexe','/platform:x64',('/out:' + (Join-Path $PSScriptRoot $OutputName)))
 $compilerArgs += ('/win32icon:' + (Join-Path $PSScriptRoot 'assets\WinBoard.ico'))
 $compilerArgs += ('/resource:' + (Join-Path $PSScriptRoot 'assets\WinBoard.png') + ',WinBoard.Brand.png')
@@ -15,6 +15,7 @@ $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Controls.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Shell.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Dock.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.Taskbar.cs')
+$compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.NativeTray.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.RunningApps.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.WidgetLayout.cs')
 $compilerArgs += (Join-Path $PSScriptRoot 'WinBoard.DockVisibility.cs')

@@ -157,11 +157,32 @@ namespace WinBoard {
                 entry.Button.ToolTip=label;System.Windows.Automation.AutomationProperties.SetHelpText(entry.Button,entry.App==null?"固定入口":label);
             }
         }
+        readonly HashSet<DockEntry> dockOpening=new HashSet<DockEntry>();
+        void RelaunchDockEntry(DockEntry entry) {
+            // Keep the original shortcut, including its arguments and working directory.
+            string path=entry.Pin!=null?entry.Pin.Path:entry.App!=null?entry.App.Path:null;
+            if(!string.IsNullOrEmpty(path))Launch(path);
+        }
+        async void OpenDockWindow(DockEntry entry,RunningWindow window,bool minimize) {
+            if(!dockOpening.Add(entry))return;
+            try {
+                bool toggle=minimize&&RunningApps.CanActivate(window.Handle)&&!RunningApps.IsIconic(window.Handle);
+                if(!RunningApps.Activate(window.Handle,minimize)){RelaunchDockEntry(entry);return;}
+                if(toggle)return;
+                // Restore is asynchronous. Check after it has had time to run; a tray
+                // close may also race the monitor's last window snapshot.
+                await Task.Delay(300);
+                if(quitting)return;
+                if(!RunningApps.CanActivate(window.Handle)||RunningApps.IsIconic(window.Handle))RelaunchDockEntry(entry);
+                else RunningApps.Activate(window.Handle,false);
+            }finally{dockOpening.Remove(entry);}
+        }
         void OpenDockEntry(DockEntry entry) {
             if(entry.Pin!=null&&entry.Pin.Path==DockEntries.Dashboard){OpenDashboardFromDock();return;}
-            if(entry.App==null){if(entry.Pin!=null)Launch(entry.Pin.Path);return;}
-            if(entry.App.Windows.Count==1){var w=entry.App.Windows[0];RunningApps.Activate(w.Handle,w.Handle==dockForeground);return;}
-            var menu=new ContextMenu();foreach(var w in entry.App.Windows){var window=w;Menu(menu,window.Title,()=>RunningApps.Activate(window.Handle,false));}
+            var windows=entry.App==null?new List<RunningWindow>():entry.App.Windows.Where(w=>RunningApps.CanActivate(w.Handle)).ToList();
+            if(windows.Count==0){RelaunchDockEntry(entry);return;}
+            if(windows.Count==1){var w=windows[0];OpenDockWindow(entry,w,w.Handle==dockForeground);return;}
+            var menu=new ContextMenu();foreach(var w in windows){var window=w;Menu(menu,window.Title,()=>OpenDockWindow(entry,window,false));}
             TrackDockMenu(menu);menu.PlacementTarget=entry.Button;menu.IsOpen=true;
         }
         void TrackDockMenu(ContextMenu menu) {menu.Opened+=(s,e)=>dockMenuOpen=true;menu.Closed+=(s,e)=>dockMenuOpen=false;}
@@ -169,7 +190,7 @@ namespace WinBoard {
             var menu=new ContextMenu();TrackDockMenu(menu);
             menu.Opened+=(s,e)=>{
                 menu.Items.Clear();
-                if(entry.App!=null)foreach(var w in entry.App.Windows){var window=w;Menu(menu,window.Title,()=>RunningApps.Activate(window.Handle,false));}
+                if(entry.App!=null)foreach(var w in entry.App.Windows){var window=w;Menu(menu,window.Title,()=>OpenDockWindow(entry,window,false));}
                 Menu(menu,"向左移动",()=>MoveDockEntry(entry,-1));Menu(menu,"向右移动",()=>MoveDockEntry(entry,1));
                 if(entry.Pin==null && !string.IsNullOrEmpty(entry.App.Path))Menu(menu,"固定到紧凑栏",()=>{entry.Pin=new Shortcut{Name=entry.Name,Path=entry.App.Path};entry.Target=entry.App.Identities.ToArray();SaveDockOrder();Build();});
                 if(entry.Pin!=null && entry.Pin.Path!=DockEntries.Dashboard)Menu(menu,entry.App==null?"从紧凑栏移除":"取消固定",()=>{
@@ -191,6 +212,38 @@ namespace WinBoard {
                 try{DragDrop.DoDragDrop(button,new DataObject(DockDragFormat,entry),DragDropEffects.Move);}finally{dockDragging=false;}
             };
         }
+        DockEntry ApplicationDropTarget(DragEventArgs e) {
+            if(e.Data.GetDataPresent(DockDragFormat)||!e.Data.GetDataPresent(DataFormats.FileDrop))return null;
+            foreach(var entry in dockEntries) {
+                var button=entry.Button;
+                if(button==null||!button.IsVisible)continue;
+                var point=e.GetPosition(button);
+                if(point.X<9||point.X>button.ActualWidth-9||point.Y<0||point.Y>button.ActualHeight)continue;
+                string path=entry.Pin!=null?entry.Pin.Path:entry.App.Path;
+                if(string.IsNullOrEmpty(path))continue;
+                if(path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))return entry;
+                if(path.EndsWith(".lnk",StringComparison.OrdinalIgnoreCase)&&entry.Target!=null&&
+                    entry.Target.Any(id=>id.StartsWith("path:",StringComparison.OrdinalIgnoreCase)&&id.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)))return entry;
+            }
+            return null;
+        }
+        static string QuoteDropPath(string path) {
+            // A trailing backslash before a closing quote must itself be escaped.
+            string trimmed=path.TrimEnd((char)92);
+            return ((char)34)+path+new string((char)92,path.Length-trimmed.Length)+(char)34;
+        }
+        void OpenDroppedPaths(DockEntry entry,DragEventArgs e) {
+            e.Effects=DragDropEffects.None;
+            try {
+                var paths=e.Data.GetData(DataFormats.FileDrop) as string[];
+                if(paths==null||paths.Length==0||paths.Any(path=>!System.IO.Path.IsPathRooted(path)||
+                    (!System.IO.File.Exists(path)&&!System.IO.Directory.Exists(path))))return;
+                string app=entry.Pin!=null?entry.Pin.Path:entry.App.Path;
+                var start=new System.Diagnostics.ProcessStartInfo(app,string.Join(" ",paths.Select(QuoteDropPath))){UseShellExecute=true};
+                System.Diagnostics.Process.Start(start);
+                e.Effects=DragDropEffects.Copy;
+            } catch(Exception ex){MessageBox.Show(this,ex.Message,"使用应用打开");}
+        }
         void BuildCompact() {
             double previousPadding=dockTopPadding;
             if(IsLoaded&&previousPadding!=(prefs.DockStyle==2?24:0)&&(dockAutoHidden||dockAutoAnimating)){ResetDockAutoHide();if(!IsVisible)Show();}
@@ -205,9 +258,12 @@ namespace WinBoard {
             var motions=new List<DockMotion>();
             var row=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(12,0,12,0)};root.Children.Add(row);
             var appRow=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,dockTopPadding,0,dockBottomPadding)};
-            double contentWidth=dockEntries.Sum(e=>e.Separator?21:52),available=Math.Max(52,SystemParameters.WorkArea.Width-48);
+            // Reserve the tray button, row margins and surface border in both sizing paths.
+            const double trayWidth=36,trayGap=2,rowMargin=24;
+            double chromeWidth=trayWidth+trayGap+rowMargin+surface.BorderThickness.Left+surface.BorderThickness.Right;
+            double contentWidth=dockEntries.Sum(e=>e.Separator?21:52),available=Math.Max(52,SystemParameters.WorkArea.Width-chromeWidth-24);
             double anchor=prefs.DockX??Left;
-            if(prefs.DockPositionLocked&&anchor>=SystemParameters.WorkArea.Left&&anchor<SystemParameters.WorkArea.Right)available=Math.Min(available,Math.Max(52,SystemParameters.WorkArea.Right-anchor-24));
+            if(prefs.DockPositionLocked&&anchor>=SystemParameters.WorkArea.Left&&anchor<SystemParameters.WorkArea.Right)available=Math.Min(available,Math.Max(52,SystemParameters.WorkArea.Right-anchor-chromeWidth));
             var scroll=new ScrollViewer{Content=appRow,Width=Math.Min(contentWidth,available),Height=72+dockTopPadding+dockBottomPadding,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled};
             var viewport=new Grid{Width=scroll.Width,Height=scroll.Height,ClipToBounds=true};viewport.Children.Add(scroll);row.Children.Add(viewport);
             var insertion=new Border{Width=3,Height=44,CornerRadius=new CornerRadius(1.5),Background=Hex("#82E4C4"),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center,IsHitTestVisible=false,Visibility=Visibility.Collapsed};viewport.Children.Add(insertion);
@@ -227,17 +283,30 @@ namespace WinBoard {
                 entry.Dot=new Border{Height=3,Width=5,CornerRadius=new CornerRadius(2),VerticalAlignment=VerticalAlignment.Bottom,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,0,0,prefs.DockStyle==2?27:5)};content.Children.Add(entry.Dot);motion.Button.Content=content;
                 EnableDockDrag(motion.Button,entry);motion.Button.ContextMenu=EntryMenu(entry);appRow.Children.Add(motion.Button);
             }
+            var trayButton=Btn("",ToggleNativeTray);trayButton.Content=new TextBlock{Text="\uE70E",FontFamily=new FontFamily("Segoe MDL2 Assets"),FontSize=18,Foreground=TextColor,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+            trayButton.Width=trayWidth;trayButton.Height=48;trayButton.Padding=new Thickness(0);trayButton.Margin=new Thickness(trayGap,dockTopPadding,0,dockBottomPadding);trayButton.Background=Brushes.Transparent;trayButton.BorderThickness=new Thickness(0);trayButton.ToolTip="后台程序 · 系统托盘";
+            System.Windows.Automation.AutomationProperties.SetName(trayButton,"后台程序");row.Children.Add(trayButton);
             row.MouseMove+=(s,e)=>{foreach(var motion in motions){double x=e.GetPosition(motion.Button).X-motion.Button.ActualWidth/2;double target=e.LeftButton==MouseButtonState.Pressed?1:1+.30*Math.Max(0,1-Math.Abs(x)/85);AnimateDockIcon(motion,target);}};
             row.MouseLeave+=(s,e)=>{foreach(var motion in motions)AnimateDockIcon(motion,1);};
             root.PreviewDragEnter+=(s,e)=>{foreach(var motion in motions)AnimateDockIcon(motion,1);};
             var dockMenu=new ContextMenu();TrackDockMenu(dockMenu);Menu(dockMenu,"添加应用…",BrowseDockApps);Menu(dockMenu,"打开工作台",OpenDashboardFromDock);AddTaskbarMenu(dockMenu);surface.ContextMenu=dockMenu;
             surface.MouseLeftButtonDown+=(s,e)=>{if(e.OriginalSource==surface||e.OriginalSource==root)DragHeader(s,e);};
-            Width=Math.Max(210,scroll.Width+24);if(IsLoaded&&!prefs.DockPositionLocked)Left=Math.Max(SystemParameters.WorkArea.Left,Math.Min(Left,SystemParameters.WorkArea.Right-Width));
+            Width=Math.Max(210,scroll.Width+chromeWidth);if(IsLoaded&&!prefs.DockPositionLocked)Left=Math.Max(SystemParameters.WorkArea.Left,Math.Min(Left,SystemParameters.WorkArea.Right-Width));
             Func<double,int> slotAt=x=>{double edge=0;for(int i=0;i<dockEntries.Count;i++){double width=dockEntries[i].Separator?21:52;if(x<edge+width/2)return i;edge+=width;}return dockEntries.Count;};
+            DockEntry highlighted=null;
+            Action<DockEntry> highlight=entry=>{
+                if(highlighted==entry)return;
+                if(highlighted!=null)highlighted.Button.Background=Brushes.Transparent;
+                highlighted=entry;
+                if(entry!=null)entry.Button.Background=Hex("#4482E4C4");
+            };
             int lastScroll=0;
             root.AllowDrop=true;root.PreviewDragOver+=(s,e)=>{
                 bool internalDrag=e.Data.GetDataPresent(DockDragFormat),external=e.Data.GetDataPresent(DataFormats.FileDrop)||e.Data.GetDataPresent("Shell IDList Array");
                 e.Handled=true;e.Effects=internalDrag?DragDropEffects.Move:external?DragDropEffects.Copy:DragDropEffects.None;
+                var appTarget=new Rect(viewport.RenderSize).Contains(e.GetPosition(viewport))?ApplicationDropTarget(e):null;
+                highlight(appTarget);
+                if(appTarget!=null){SetRecycleHover(null);insertion.Visibility=Visibility.Collapsed;e.Effects=DragDropEffects.Copy;return;}
                 if(!internalDrag&&!external){insertion.Visibility=Visibility.Collapsed;return;}
                 if(!internalDrag&&RecycleDropTarget(e)!=null){insertion.Visibility=Visibility.Collapsed;bool valid=RecycleDropPaths(e)!=null;SetRecycleHover(valid?RecycleDropTarget(e):null);e.Effects=valid?DragDropEffects.Move:DragDropEffects.None;return;}
                 SetRecycleHover(null);
@@ -246,10 +315,13 @@ namespace WinBoard {
                 int slot=slotAt(e.GetPosition(appRow).X);double left=dockEntries.Take(slot).Sum(item=>item.Separator?21:52)-scroll.HorizontalOffset;
                 insertion.Margin=new Thickness(Math.Max(0,Math.Min(scroll.Width-3,left-1)),0,0,0);insertion.Visibility=Visibility.Visible;
             };
-            root.DragLeave+=(s,e)=>{insertion.Visibility=Visibility.Collapsed;SetRecycleHover(null);};
+            root.DragLeave+=(s,e)=>{highlight(null);insertion.Visibility=Visibility.Collapsed;SetRecycleHover(null);};
             root.PreviewDrop+=(s,e)=>{
+                highlight(null);
                 int slot=slotAt(e.GetPosition(appRow).X);insertion.Visibility=Visibility.Collapsed;e.Handled=true;
                 if(!e.Data.GetDataPresent(DockDragFormat)&&RecycleDropTarget(e)!=null){RecycleDroppedFiles(e);return;}
+                var appTarget=new Rect(viewport.RenderSize).Contains(e.GetPosition(viewport))?ApplicationDropTarget(e):null;
+                if(appTarget!=null){OpenDroppedPaths(appTarget,e);return;}
                 if(e.Data.GetDataPresent(DockDragFormat)) {var entry=e.Data.GetData(DockDragFormat) as DockEntry;e.Effects=DragDropEffects.None;if(entry!=null&&dockEntries.Contains(entry)){DockOrder.Insert(dockEntries,entry,slot);SaveDockOrder();Build();e.Effects=DragDropEffects.Move;}}
                 else if(e.Data.GetDataPresent(DataFormats.FileDrop)||e.Data.GetDataPresent("Shell IDList Array")){InsertDockPaths(ShellEntries.DropPaths(e.Data),slot);e.Effects=DragDropEffects.Copy;}
             };
