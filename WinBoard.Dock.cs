@@ -105,11 +105,15 @@ namespace WinBoard {
                 if(Dispatcher.HasShutdownStarted)return;
                 Dispatcher.BeginInvoke(new Action(()=>{
                     scanningApps=false;if(quitting||task.IsFaulted||!compact||dockDragging||dockMenuOpen||Mouse.LeftButton==MouseButtonState.Pressed)return;
-                    runningApps=task.Result;bool changed=SyncDockEntries();
+                    stableRunningKeys=new HashSet<string>(runningApps.Select(app=>app.Key),StringComparer.OrdinalIgnoreCase);
+                    runningApps=task.Result;
+                    stableRunningKeys.IntersectWith(runningApps.Select(app=>app.Key));
+                    bool changed=SyncDockEntries();
                     if(changed)Build();else UpdateDockStatus();
                 }));
             });
         }
+        HashSet<string> stableRunningKeys=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool SyncDockEntries() {
             bool changed=false;
             foreach(var entry in dockEntries.ToList())if(entry.Pin!=null&&!prefs.DockLayout.Contains(entry.Pin)){dockEntries.Remove(entry);changed=true;}
@@ -122,14 +126,23 @@ namespace WinBoard {
             }
             var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach(var entry in dockEntries.Where(e=>e.Pin!=null)) {
-                var app=runningApps.FirstOrDefault(a=>RunningApps.Matches(entry.Target,a)&&!used.Contains(a.Key));
-                if(app!=null)used.Add(app.Key);entry.App=app;
+                var matches=runningApps.Where(a=>!used.Contains(a.Key)&&RunningApps.Matches(entry.Target,a)).ToList();
+                entry.App=matches.FirstOrDefault();
+                if(entry.App==null)continue;
+                foreach(var match in matches)used.Add(match.Key);
+                if(matches.Count>1){
+                    var first=entry.App;
+                    var merged=new RunningApp{Key=first.Key,Name=first.Name,Path=first.Path,Identities=first.Identities};
+                    merged.Windows.AddRange(matches.SelectMany(match=>match.Windows));
+                    entry.App=merged;
+                }
             }
             foreach(var entry in dockEntries.Where(e=>e.Pin==null).ToList()) {
                 var app=runningApps.FirstOrDefault(a=>a.Key==entry.App.Key&&!used.Contains(a.Key));
                 if(app==null){dockEntries.Remove(entry);changed=true;}else{entry.App=app;used.Add(app.Key);}
             }
-            foreach(var app in runningApps)if(!used.Contains(app.Key)) {
+            // Only publish an unmatched window after its identity survives two scans.
+            foreach(var app in runningApps)if(!used.Contains(app.Key)&&stableRunningKeys.Contains(app.Key)) {
                 int index=dockEntries.FindIndex(e=>e.Separator);dockEntries.Insert(index<0?dockEntries.Count:index,new DockEntry{App=app});changed=true;
             }
             return changed;
@@ -177,13 +190,23 @@ namespace WinBoard {
                 else RunningApps.Activate(window.Handle,false);
             }finally{dockOpening.Remove(entry);}
         }
+        DockPreviewWindow previewWindow;
+        DockEntry previewEntry;
+        void ShowDockPreview(DockEntry entry,List<RunningWindow> windows,bool clicked){
+            if(previewWindow!=null&&previewEntry==entry){if(clicked)previewWindow.FocusPreview();return;}
+            if(previewWindow!=null)previewWindow.Close();
+            var panel=new DockPreviewWindow(this,entry.Button,windows,w=>OpenDockWindow(entry,w,false),clicked);
+            previewWindow=panel;previewEntry=entry;dockMenuOpen=true;
+            panel.Closed+=(s,e)=>{previewWindow=null;previewEntry=null;dockMenuOpen=false;};
+            panel.Show();
+        }
         void OpenDockEntry(DockEntry entry) {
+            if(previewWindow!=null&&(entry.App==null||entry.App.Windows.Count<=1||previewEntry!=entry))previewWindow.Close();
             if(entry.Pin!=null&&entry.Pin.Path==DockEntries.Dashboard){OpenDashboardFromDock();return;}
             var windows=entry.App==null?new List<RunningWindow>():entry.App.Windows.Where(w=>RunningApps.CanActivate(w.Handle)).ToList();
             if(windows.Count==0){RelaunchDockEntry(entry);return;}
             if(windows.Count==1){var w=windows[0];OpenDockWindow(entry,w,w.Handle==dockForeground);return;}
-            var menu=new ContextMenu();foreach(var w in windows){var window=w;Menu(menu,window.Title,()=>OpenDockWindow(entry,window,false));}
-            TrackDockMenu(menu);menu.PlacementTarget=entry.Button;menu.IsOpen=true;
+            ShowDockPreview(entry,windows,true);
         }
         void TrackDockMenu(ContextMenu menu) {menu.Opened+=(s,e)=>dockMenuOpen=true;menu.Closed+=(s,e)=>dockMenuOpen=false;}
         ContextMenu EntryMenu(DockEntry entry) {
@@ -240,7 +263,7 @@ namespace WinBoard {
                     (!System.IO.File.Exists(path)&&!System.IO.Directory.Exists(path))))return;
                 string app=entry.Pin!=null?entry.Pin.Path:entry.App.Path;
                 var start=new System.Diagnostics.ProcessStartInfo(app,string.Join(" ",paths.Select(QuoteDropPath))){UseShellExecute=true};
-                System.Diagnostics.Process.Start(start);
+                StartShellTarget(start);
                 e.Effects=DragDropEffects.Copy;
             } catch(Exception ex){MessageBox.Show(this,ex.Message,"使用应用打开");}
         }
@@ -260,7 +283,14 @@ namespace WinBoard {
             var appRow=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,dockTopPadding,0,dockBottomPadding)};
             // Reserve the tray button, row margins and surface border in both sizing paths.
             const double trayWidth=36,trayGap=2,rowMargin=24;
-            double chromeWidth=trayWidth+trayGap+rowMargin+surface.BorderThickness.Left+surface.BorderThickness.Right;
+            var startButton=Btn("",()=>System.Windows.Forms.SendKeys.SendWait("^{ESC}"));
+            var logo=new System.Windows.Controls.Primitives.UniformGrid{Rows=2,Columns=2,Width=23,Height=23};
+            for(int i=0;i<4;i++)logo.Children.Add(new Border{Background=Hex("#48BAFF"),Margin=new Thickness(.6)});
+            startButton.Content=logo;startButton.ToolTip="开始";startButton.Width=38;startButton.Height=48;
+            startButton.Background=Brushes.Transparent;startButton.Padding=new Thickness(0);startButton.BorderThickness=new Thickness(0);
+            startButton.Margin=new Thickness(0,dockTopPadding,4,dockBottomPadding);
+            System.Windows.Automation.AutomationProperties.SetName(startButton,"开始");row.Children.Add(startButton);
+            double chromeWidth=startButton.Width+startButton.Margin.Right+trayWidth+trayGap+rowMargin+surface.BorderThickness.Left+surface.BorderThickness.Right;
             double contentWidth=dockEntries.Sum(e=>e.Separator?21:52),available=Math.Max(52,SystemParameters.WorkArea.Width-chromeWidth-24);
             double anchor=prefs.DockX??Left;
             if(prefs.DockPositionLocked&&anchor>=SystemParameters.WorkArea.Left&&anchor<SystemParameters.WorkArea.Right)available=Math.Min(available,Math.Max(52,SystemParameters.WorkArea.Right-anchor-chromeWidth));
@@ -281,10 +311,16 @@ namespace WinBoard {
                 var motion=MakeDockTile(entry.Name,path??"",path==DockEntries.Dashboard,()=>OpenDockEntry(entry),windowIcon);motions.Add(motion);entry.Button=motion.Button;
                 var icon=motion.Button.Content as UIElement;var content=new Grid{Width=52,Height=68};motion.Button.Content=null;content.Children.Add(icon);
                 entry.Dot=new Border{Height=3,Width=5,CornerRadius=new CornerRadius(2),VerticalAlignment=VerticalAlignment.Bottom,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,0,0,prefs.DockStyle==2?27:5)};content.Children.Add(entry.Dot);motion.Button.Content=content;
+                motion.Button.ToolTipOpening+=(s,e)=>{
+                    if(entry.App==null||dockDragging||entry.Separator)return;
+                    var visible=entry.App.Windows.Where(w=>RunningApps.CanActivate(w.Handle)).ToList();
+                    if(visible.Count==0)return;
+                    e.Handled=true;ShowDockPreview(entry,visible,false);
+                };
                 EnableDockDrag(motion.Button,entry);motion.Button.ContextMenu=EntryMenu(entry);appRow.Children.Add(motion.Button);
             }
-            var trayButton=Btn("",ToggleNativeTray);trayButton.Content=new TextBlock{Text="\uE70E",FontFamily=new FontFamily("Segoe MDL2 Assets"),FontSize=18,Foreground=TextColor,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
-            trayButton.Width=trayWidth;trayButton.Height=48;trayButton.Padding=new Thickness(0);trayButton.Margin=new Thickness(trayGap,dockTopPadding,0,dockBottomPadding);trayButton.Background=Brushes.Transparent;trayButton.BorderThickness=new Thickness(0);trayButton.ToolTip="后台程序 · 系统托盘";
+            Button trayButton=null;trayButton=Btn("",()=>ToggleBackgroundApps(trayButton));trayButton.Content=new TextBlock{Text="\uE70E",FontFamily=new FontFamily("Segoe MDL2 Assets"),FontSize=18,Foreground=TextColor,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+            trayButton.Width=trayWidth;trayButton.Height=48;trayButton.Padding=new Thickness(0);trayButton.Margin=new Thickness(trayGap,dockTopPadding,0,dockBottomPadding);trayButton.Background=Brushes.Transparent;trayButton.BorderThickness=new Thickness(0);trayButton.ToolTip="后台程序";
             System.Windows.Automation.AutomationProperties.SetName(trayButton,"后台程序");row.Children.Add(trayButton);
             row.MouseMove+=(s,e)=>{foreach(var motion in motions){double x=e.GetPosition(motion.Button).X-motion.Button.ActualWidth/2;double target=e.LeftButton==MouseButtonState.Pressed?1:1+.30*Math.Max(0,1-Math.Abs(x)/85);AnimateDockIcon(motion,target);}};
             row.MouseLeave+=(s,e)=>{foreach(var motion in motions)AnimateDockIcon(motion,1);};

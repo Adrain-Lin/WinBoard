@@ -452,7 +452,23 @@ namespace WinBoard {
             QueuePackagedIcon(path);
             if(SHGetFileInfo(path,0,ref info,(uint)Marshal.SizeOf(info),0x100)!=IntPtr.Zero && info.Icon!=IntPtr.Zero) {try {image=Imaging.CreateBitmapSourceFromHIcon(info.Icon,Int32Rect.Empty,BitmapSizeOptions.FromEmptyOptions());image.Freeze();icons[path]=image;return image;}finally{DestroyIcon(info.Icon);}}return null;
         }
-        void Launch(string path){try{if(ShellEntries.Name(path)!=null)Process.Start(new ProcessStartInfo("explorer.exe",path){UseShellExecute=true});else Process.Start(new ProcessStartInfo(path){UseShellExecute=true});}catch(Exception ex){MessageBox.Show(this,"无法打开："+path+"\n"+ex.Message,"WinBoard");}}
+        // ShellExecute inherits this process's environment. An installer may add
+        // runtime directories after WinBoard (or its own launcher) was started.
+        static void StartShellTarget(ProcessStartInfo target) {
+            string inherited=Environment.GetEnvironmentVariable("Path")??"";
+            var known=new HashSet<string>(inherited.Split(';'),StringComparer.OrdinalIgnoreCase);
+            var additions=new List<string>();
+            foreach(var scope in new[]{EnvironmentVariableTarget.Machine,EnvironmentVariableTarget.User}){
+                string registered=Environment.GetEnvironmentVariable("Path",scope)??"";
+                foreach(var value in registered.Split(';')){
+                    string directory=Environment.ExpandEnvironmentVariables(value.Trim().Trim('"'));
+                    if(System.IO.Path.IsPathRooted(directory)&&known.Add(directory))additions.Add(directory);
+                }
+            }
+            if(additions.Count>0)Environment.SetEnvironmentVariable("Path",inherited.TrimEnd(';')+";"+string.Join(";",additions));
+            Process.Start(target);
+        }
+        void Launch(string path){try{if(ShellEntries.Name(path)!=null)StartShellTarget(new ProcessStartInfo("explorer.exe",path){UseShellExecute=true});else StartShellTarget(new ProcessStartInfo(path){UseShellExecute=true});}catch(Exception ex){MessageBox.Show(this,"无法打开："+path+"\n"+ex.Message,"WinBoard");}}
         void Reveal(string path){if(Directory.Exists(path)){Launch(path);return;}try{Process.Start("explorer.exe","/select,\""+path+"\"");}catch(Exception ex){MessageBox.Show(ex.Message);}}
         void Menu(ItemsControl parent,string text,Action action){var m=new MenuItem{Header=text};m.Click+=(s,e)=>action();parent.Items.Add(m);}
         void PickFiles(Project p){PathDialog(p,false);}
@@ -625,6 +641,6 @@ namespace WinBoard {
             menu.Items.Add("设置",null,(s,e)=>Dispatcher.Invoke(new Action(AppSettings)));
             menu.Items.Add("退出 WinBoard",null,(s,e)=>Dispatcher.Invoke(new Action(Quit)));tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>Dispatcher.Invoke(new Action(BringBack));
         }
-        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;if(FinishRecordingBeforeExit())return;quitting=true;EndNativeTray();CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
+        void Quit(){if(dashboardHost!=null){dashboardHost.Quit();return;}if(quitting)return;if(FinishRecordingBeforeExit())return;quitting=true;CloseDockWindow();ResetDockAutoHide();if(dockHideTimer!=null)dockHideTimer.Stop();taskbarGuard.Dispose(systemSessionEnding?300:4000);StopWidgets();Save();if(runningTimer!=null)runningTimer.Stop();timer.Stop();tray.Dispose();Close();Application.Current.Shutdown();}
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -39,6 +39,7 @@ namespace WinBoard {
         }
         void CloseDockWindow() {
             if(dockHost==null)return;var dock=dockHost;dockHost=null;
+            if(dock.backgroundPopup!=null)dock.backgroundPopup.IsOpen=false;
             dock.quitting=true;dock.ResetDockAutoHide();
             if(dock.dockHideTimer!=null)dock.dockHideTimer.Stop();
             if(dock.runningTimer!=null)dock.runningTimer.Stop();

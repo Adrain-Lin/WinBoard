@@ -47,7 +47,7 @@ namespace WinBoard {
         [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window,int command);
         [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr window,uint message,IntPtr wp,IntPtr lp,uint flags,uint timeout,out IntPtr result);
         [DllImport("user32.dll",EntryPoint="GetClassLongPtrW")] static extern IntPtr GetClassIcon(IntPtr window,int index);
-        static string ProcessPath(uint id) {
+        internal static string ProcessPath(uint id) {
             IntPtr process=OpenProcess(0x1000,false,id);if(process==IntPtr.Zero)return null;
             try {var text=new StringBuilder(32768);int length=text.Capacity;return QueryFullProcessImageName(process,0,text,ref length)?text.ToString():null;}finally{CloseHandle(process);}
         }

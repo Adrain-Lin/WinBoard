@@ -1,62 +1,89 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Automation;
-using System.Windows.Threading;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace WinBoard {
-    public static class NativeTray {
-        [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string name,string title);
-        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
-        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window,int command);
-        public static IntPtr Popup {get{var h=FindWindow("TopLevelWindowForOverflowXamlIsland",null);return h!=IntPtr.Zero?h:FindWindow("NotifyIconOverflowWindow",null);}}
-        public static bool IsOpen {get{var h=Popup;return h!=IntPtr.Zero&&IsWindowVisible(h);}}
-        public static void Close(){var h=Popup;if(h!=IntPtr.Zero)ShowWindow(h,0);}
-        public static void ShowTaskbar(){var h=FindWindow("Shell_TrayWnd",null);if(h!=IntPtr.Zero)ShowWindow(h,5);}
-        public static bool Open(){
-            var handle=FindWindow("Shell_TrayWnd",null);if(handle==IntPtr.Zero)return false;
-            var root=AutomationElement.FromHandle(handle);
-            var buttons=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));
-            foreach(AutomationElement button in buttons){
-                string name=button.Current.Name??"",id=button.Current.AutomationId??"";
-                if(id!="ChevronButton"&&id!="OverflowButton"&&name!="显示隐藏的图标"&&name!="显示隐藏图标"&&name!="Show hidden icons"&&name!="顯示隱藏的圖示")continue;
-                object pattern;if(button.TryGetCurrentPattern(InvokePattern.Pattern,out pattern)){((InvokePattern)pattern).Invoke();return true;}
+    internal static class BackgroundApps {
+        [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath(ref Guid id,uint flags,IntPtr token,out IntPtr path);
+        static string ExpandPath(string value){
+            if(string.IsNullOrWhiteSpace(value))return null;
+            int slash=value.IndexOf('\\');
+            Guid id;
+            if(slash<=0||!Guid.TryParse(value.Substring(0,slash),out id))return Environment.ExpandEnvironmentVariables(value);
+            IntPtr path;
+            if(SHGetKnownFolderPath(ref id,0,IntPtr.Zero,out path)!=0)return null;
+            try{return Path.Combine(Marshal.PtrToStringUni(path),value.Substring(slash+1));}
+            finally{Marshal.FreeCoTaskMem(path);}
+        }
+        public static List<string> Read(string[] pinned){
+            var live=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach(var process in Process.GetProcesses())using(process){
+                string path=RunningApps.ProcessPath((uint)process.Id);
+                if(path!=null)live.Add(path);
             }
-            return false;
+            var result=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using(var root=Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings")){
+                if(root!=null){
+                    foreach(string name in root.GetSubKeyNames())using(var item=root.OpenSubKey(name)){
+                        if(item==null)continue;
+                        var path=ExpandPath(item.GetValue("ExecutablePath") as string);
+                        if(live.Contains(path)&&!string.Equals(Path.GetFileName(path),"explorer.exe",StringComparison.OrdinalIgnoreCase))result.Add(path);
+                    }
+                }else result.UnionWith(pinned.Where(live.Contains));
+            }
+            return result.OrderBy(path=>Path.GetFileNameWithoutExtension(path),StringComparer.CurrentCultureIgnoreCase).ToList();
         }
     }
     public partial class Board {
-        bool nativeTrayActive,nativeTrayAutoHide,nativeTrayResumeGuard;
-        int nativeTrayGeneration;
-        DispatcherTimer nativeTrayTimer;
-        async void ToggleNativeTray(){
-            if(dashboardHost!=null){dashboardHost.ToggleNativeTray();return;}
-            if(nativeTrayActive){EndNativeTray();return;}
-            nativeTrayResumeGuard=taskbarGuard.Active||prefs.HideTaskbarWhileRunning;
-            taskbarGuard.Dispose();nativeTrayAutoHide=WindowsTaskbar.AutoHide;nativeTrayActive=true;
-            int generation=++nativeTrayGeneration;
-            if(dockHost!=null)dockHost.dockMenuOpen=true;
+        Popup backgroundPopup;
+        async void ToggleBackgroundApps(Button anchor){
+            if(backgroundPopup!=null){backgroundPopup.IsOpen=false;return;}
+            if(previewWindow!=null)previewWindow.Close();
+            var grid=new WrapPanel{MaxWidth=240};
+            var loading=new TextBlock{Text="正在读取…",Foreground=TextColor,Margin=new Thickness(6)};
+            grid.Children.Add(loading);
+            var panel=new Popup{PlacementTarget=anchor,Placement=PlacementMode.Top,StaysOpen=false,AllowsTransparency=true,
+                Child=new Border{Child=grid,Padding=new Thickness(8),CornerRadius=new CornerRadius(12),Background=CardColor,BorderBrush=Line,BorderThickness=new Thickness(1)}};
+            backgroundPopup=panel;dockMenuOpen=true;
+            panel.Closed+=(s,e)=>{if(backgroundPopup==panel){backgroundPopup=null;dockMenuOpen=false;}};
+            grid.PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Escape)panel.IsOpen=false;};
+            panel.IsOpen=true;
             try{
-                WindowsTaskbar.SetAutoHide(false);NativeTray.ShowTaskbar();await Task.Delay(250);
-                if(!nativeTrayActive||generation!=nativeTrayGeneration)return;
-                var opening=Task.Run(()=>NativeTray.Open());
-                if(await Task.WhenAny(opening,Task.Delay(3000))!=opening)throw new TimeoutException("系统托盘响应超时。");
-                if(!nativeTrayActive||generation!=nativeTrayGeneration)return;
-                bool opened=await opening;
-                if(!opened)throw new InvalidOperationException("未找到系统的隐藏图标按钮，请在 Windows 任务栏设置中启用隐藏图标菜单。");
-                await Task.Delay(350);
-                if(!nativeTrayActive||generation!=nativeTrayGeneration)return;
-                nativeTrayTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(200)};
-                nativeTrayTimer.Tick+=(s,e)=>{if(!NativeTray.IsOpen)EndNativeTray();};nativeTrayTimer.Start();
-            }catch(Exception ex){EndNativeTray();if(!quitting)MessageBox.Show(this,ex.Message,"后台程序");}
+                var pins=dockEntries.Where(entry=>entry.Pin!=null&&entry.Target!=null).SelectMany(entry=>entry.Target.Where(id=>id.StartsWith("path:",StringComparison.OrdinalIgnoreCase)).Select(id=>new {Path=id.Substring(5),Pin=entry.Pin})).ToList();
+                var paths=await Task.Run(()=>BackgroundApps.Read(pins.Select(p=>p.Path).ToArray()));
+                if(!panel.IsOpen)return;
+                if(paths.Count==0){loading.Text="暂无后台应用";return;}
+                grid.Children.Clear();
+                foreach(var path in paths){
+                    var pin=pins.FirstOrDefault(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase));
+                    var name=PathLabel(path,pin==null?null:pin.Pin.Name);
+                    var button=Btn("",()=>{
+                        panel.IsOpen=false;
+                        var app=runningApps.FirstOrDefault(group=>string.Equals(group.Path,path,StringComparison.OrdinalIgnoreCase));
+                        var window=app==null?null:app.Windows.FirstOrDefault(w=>RunningApps.CanActivate(w.Handle));
+                        if(window!=null)RunningApps.Activate(window.Handle,false);
+                        else Launch(pin==null?path:pin.Pin.Path);
+                    });
+                    button.Width=44;button.Height=44;button.Margin=new Thickness(2);button.Padding=new Thickness(4);button.ToolTip=name;
+                    var icon=GetIcon(pin==null?path:pin.Pin.Path);
+                    if(icon!=null)button.Content=new Image{Width=27,Height=27,Source=icon};
+                    else button.Content=name.Substring(0,1);
+                    System.Windows.Automation.AutomationProperties.SetName(button,name);grid.Children.Add(button);
+                }
+            }catch(Exception){if(panel.IsOpen){grid.Children.Clear();loading.Text="无法读取后台应用";grid.Children.Add(loading);}}
         }
-        void EndNativeTray(){
-            if(!nativeTrayActive)return;nativeTrayActive=false;nativeTrayGeneration++;
-            if(nativeTrayTimer!=null){nativeTrayTimer.Stop();nativeTrayTimer=null;}
-            NativeTray.Close();WindowsTaskbar.SetAutoHide(nativeTrayAutoHide);
-            if(dockHost!=null)dockHost.dockMenuOpen=false;
-            if(nativeTrayResumeGuard&&!quitting&&!systemSessionEnding)taskbarGuard.Start();
+        static string PathLabel(string path,string pinName){
+            return string.IsNullOrEmpty(pinName)?System.IO.Path.GetFileNameWithoutExtension(path):System.IO.Path.GetFileNameWithoutExtension(pinName);
         }
     }
 }

@@ -55,16 +55,14 @@ namespace WinBoard {
         static bool MonitorApplicationBlocks(IntPtr monitor,uint ownProcess) {
             var info=new MonitorInfo{Size=Marshal.SizeOf(typeof(MonitorInfo))};if(!GetMonitorInfo(monitor,ref info))return false;
             bool hide=false;
-            // Foreground focus may be on another display while a video stays full-screen here.
-            // EnumWindows visits top-level windows in Z order: a normal window above the
-            // video keeps the Dock visible; a background full-screen window alone does not win.
+            // A small foreground window can leave a maximized window visible beneath it.
             EnumWindows((window,data)=>{
                 Rect bounds;if(!VisibleBounds(window,out bounds)||!bounds.Bounds.IntersectsWith(info.Monitor.Bounds))return true;
                 uint process;GetWindowThreadProcessId(window,out process);
-                if(process==ownProcess){var title=new StringBuilder(128);GetWindowText(window,title,title.Capacity);return title.ToString()!="WinBoard";}
+                if(process==ownProcess)return true;
                 long style=GetWindowStyle(window,-20).ToInt64();
                 if((style&0x08000080)!=0&&!CoversMonitor(bounds.Bounds,info.Monitor.Bounds))return true;
-                IntPtr owner=GetAncestor(window,3);hide=Blocks(window,monitor,ownProcess)||(owner!=window&&Blocks(owner,monitor,ownProcess));return false;
+                IntPtr owner=GetAncestor(window,3);hide=Blocks(window,monitor,ownProcess)||(owner!=window&&Blocks(owner,monitor,ownProcess));return !hide;
             },IntPtr.Zero);
             return hide;
         }
@@ -79,7 +77,7 @@ namespace WinBoard {
                 IntPtr root=GetAncestor(foreground,2);if(root==IntPtr.Zero)root=foreground;
                 IntPtr owner=GetAncestor(foreground,3);
                 if(Blocks(root,monitor,ownProcess)||(owner!=root&&Blocks(owner,monitor,ownProcess)))return true;
-                if(MonitorFromWindow(root,2)==monitor)return false;
+                if(DesktopWindow(root))return false;
                 return MonitorApplicationBlocks(monitor,ownProcess);
             }finally {if(old!=IntPtr.Zero)SetThreadDpiAwarenessContext(old);}
         }
